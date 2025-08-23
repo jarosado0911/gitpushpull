@@ -8,15 +8,12 @@ usage() {
 
 # Parse args
 if [[ "${1-}" == "-h" || "${1-}" == "--help" ]]; then
-  usage
-  exit 0
+  usage; exit 0
 fi
-
 repeat="${1:-1}"
 if ! [[ "$repeat" =~ ^[0-9]+$ ]] || [[ "$repeat" -le 0 ]]; then
   echo "Error: REPEAT_COUNT must be a positive integer." >&2
-  usage
-  exit 1
+  usage; exit 1
 fi
 
 # Go to repo root
@@ -24,7 +21,6 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 cd "$repo_root"
 
 # --- Ensure we're on the development branch ---
-# Try local branch; otherwise track remote if it exists; else create new from current HEAD.
 if git show-ref --verify --quiet refs/heads/development; then
   git checkout development
 elif git ls-remote --exit-code --heads origin development >/dev/null 2>&1; then
@@ -34,8 +30,19 @@ else
 fi
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
-mkdir -p test
 
+# --- PULL AT THE VERY BEGINNING (on development) ---
+if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
+  # Pull latest; auto-stash if supported
+  if ! git pull --rebase --autostash; then
+    # Fallback for older git without --autostash
+    git -c rebase.autoStash=true pull --rebase
+  fi
+else
+  echo "No upstream set for '$branch' yet; skipping initial pull."
+fi
+
+mkdir -p test
 today="$(date +%F)"
 
 # Helper: generate N random words
@@ -62,7 +69,6 @@ generate_words() {
   fi
 }
 
-# Ensure upstream is set and push
 ensure_push() {
   if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
     git push

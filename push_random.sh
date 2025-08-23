@@ -100,12 +100,20 @@ open_or_get_pr_number() {
 
 merge_pr() {
   local pr_num="$1"
-  # Attempt a standard merge commit
-  gh pr merge "$pr_num" --merge --admin --yes || {
-    echo "Error: Failed to merge PR #$pr_num. Check branch protection, required checks, or conflicts." >&2
-    exit 1
-  }
+
+  # 1) Try queued auto-merge (no prompt; merges when checks/requirements pass)
+  if gh pr merge "$pr_num" --auto --merge; then
+    return
+  fi
+
+  # 2) Fall back to immediate merge and auto-confirm the prompt
+  if command -v yes >/dev/null 2>&1; then
+    yes | gh pr merge "$pr_num" --merge --admin
+  else
+    printf 'y\n' | gh pr merge "$pr_num" --merge --admin
+  fi
 }
+
 
 for (( i=1; i<=repeat; i++ )); do
   # Unique filename per iteration

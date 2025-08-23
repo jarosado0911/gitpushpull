@@ -23,12 +23,22 @@ fi
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 cd "$repo_root"
 
+# --- Ensure we're on the development branch ---
+# Try local branch; otherwise track remote if it exists; else create new from current HEAD.
+if git show-ref --verify --quiet refs/heads/development; then
+  git checkout development
+elif git ls-remote --exit-code --heads origin development >/dev/null 2>&1; then
+  git checkout -b development --track origin/development
+else
+  git checkout -b development
+fi
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
 mkdir -p test
 
 today="$(date +%F)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
 
-# Helper: generate 50 random words
+# Helper: generate N random words
 generate_words() {
   local n="$1"
   if command -v shuf >/dev/null 2>&1 && [[ -f /usr/share/dict/words ]]; then
@@ -39,7 +49,7 @@ generate_words() {
     awk -v N="$n" '
       function randword(  len,i,chars,w) {
         chars="abcdefghijklmnopqrstuvwxyz"
-        len = int(4 + rand()*5)
+        len = int(4 + rand()*5)  # 4..8
         w=""
         for (i=1;i<=len;i++) w = w substr(chars, int(rand()*26)+1, 1)
         return w
@@ -52,7 +62,7 @@ generate_words() {
   fi
 }
 
-# Ensure upstream exists or set it on first push
+# Ensure upstream is set and push
 ensure_push() {
   if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
     git push
@@ -62,10 +72,9 @@ ensure_push() {
 }
 
 for (( i=1; i<=repeat; i++ )); do
-  # Base filename for today; add a suffix if it already exists (to avoid clobbering)
+  # Unique filename per iteration
   outfile="test/test-${today}.txt"
   if [[ -e "$outfile" ]]; then
-    # Add time + sequence to guarantee uniqueness across rapid iterations
     outfile="test/test-${today}-$(date +%H%M%S)-$i.txt"
   fi
 
@@ -73,8 +82,8 @@ for (( i=1; i<=repeat; i++ )); do
   echo "Wrote: $outfile"
 
   git add -A
-  git commit -m "Add $(basename "$outfile") with 50 random words (commit $i/$repeat)"
+  git commit -m "Add $(basename "$outfile") with 50 random words (development, commit $i/$repeat)"
   ensure_push
 done
 
-echo "Done: created $repeat file(s), committed, and pushed."
+echo "Done on branch '$branch': created $repeat file(s), committed, and pushed."

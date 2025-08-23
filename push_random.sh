@@ -103,16 +103,21 @@ open_or_get_pr_number() {
 
 merge_pr() {
   local pr_num="$1"
-  # Prefer queued auto-merge (no prompt). Falls back to immediate merge with auto-confirm.
+
+  # Try queued auto-merge (no prompt; returns 0 if enabled for the repo)
   if gh pr merge "$pr_num" --auto --merge; then
     return
   fi
-  if command -v yes >/dev/null 2>&1; then
-    yes | gh pr merge "$pr_num" --merge --admin
-  else
-    printf 'y\n' | gh pr merge "$pr_num" --merge --admin
+
+  # Fallback: send a single "y" to the prompt; avoid 'yes |' (breaks with pipefail)
+  if printf 'y\n' | gh pr merge "$pr_num" --merge --admin; then
+    return
   fi
+
+  echo "Error: Failed to merge PR #$pr_num. Check branch protection, required checks, or conflicts." >&2
+  exit 1
 }
+
 
 # ---------- Repeat N times ----------
 for (( i=1; i<=repeat; i++ )); do

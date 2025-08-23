@@ -20,6 +20,9 @@ fi
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 cd "$repo_root"
 
+# Keep remote refs fresh
+git fetch origin --prune
+
 # Ensure GitHub CLI is available and authenticated (needed for PR + merge)
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI 'gh' is required. Install from https://cli.github.com/." >&2
@@ -100,13 +103,10 @@ open_or_get_pr_number() {
 
 merge_pr() {
   local pr_num="$1"
-
-  # 1) Try queued auto-merge (no prompt; merges when checks/requirements pass)
+  # Prefer queued auto-merge (no prompt). Falls back to immediate merge with auto-confirm.
   if gh pr merge "$pr_num" --auto --merge; then
     return
   fi
-
-  # 2) Fall back to immediate merge and auto-confirm the prompt
   if command -v yes >/dev/null 2>&1; then
     yes | gh pr merge "$pr_num" --merge --admin
   else
@@ -114,7 +114,7 @@ merge_pr() {
   fi
 }
 
-
+# ---------- Repeat N times ----------
 for (( i=1; i<=repeat; i++ )); do
   # Unique filename per iteration
   outfile="test/test-${today}.txt"
@@ -129,7 +129,7 @@ for (( i=1; i<=repeat; i++ )); do
   git commit -m "Add $(basename "$outfile") with 50 random words (development, commit $i/$repeat)"
   ensure_push
 
-  # --- Open PR -> main, merge it, then pull on development ---
+  # Open PR -> main, merge it, then pull on development
   pr_num="$(open_or_get_pr_number)"
   echo "Opened/Found PR #$pr_num from '$branch' to 'main'."
   merge_pr "$pr_num"

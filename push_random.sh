@@ -1,35 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Go to the repo root (fails if not inside a git repo)
+usage() {
+  echo "Usage: $0 [REPEAT_COUNT]"
+  echo "  REPEAT_COUNT: positive integer (default 1)"
+}
+
+# Parse args
+if [[ "${1-}" == "-h" || "${1-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+repeat="${1:-1}"
+if ! [[ "$repeat" =~ ^[0-9]+$ ]] || [[ "$repeat" -le 0 ]]; then
+  echo "Error: REPEAT_COUNT must be a positive integer." >&2
+  usage
+  exit 1
+fi
+
+# Go to repo root
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 cd "$repo_root"
 
-# Ensure test/ exists
 mkdir -p test
 
-# Date-based filename (add a time suffix if today's file already exists)
 today="$(date +%F)"
-outfile="test/test-${today}.txt"
-if [[ -e "$outfile" ]]; then
-  outfile="test/test-${today}-$(date +%H%M%S).txt"
-fi
+branch="$(git rev-parse --abbrev-ref HEAD)"
 
-# Generate 50 random "words"
+# Helper: generate 50 random words
 generate_words() {
   local n="$1"
   if command -v shuf >/dev/null 2>&1 && [[ -f /usr/share/dict/words ]]; then
-    # Linux: dictionary + shuf
     shuf -n "$n" /usr/share/dict/words | tr '\n' ' ' | sed 's/ *$/\n/'
   elif command -v gshuf >/dev/null 2>&1 && [[ -f /usr/share/dict/words ]]; then
-    # macOS with coreutils: gshuf
     gshuf -n "$n" /usr/share/dict/words | tr '\n' ' ' | sed 's/ *$/\n/'
   else
-    # Portable fallback: random 4–8 letter tokens
     awk -v N="$n" '
       function randword(  len,i,chars,w) {
         chars="abcdefghijklmnopqrstuvwxyz"
-        len = int(4 + rand()*5)   # 4..8
+        len = int(4 + rand()*5)
         w=""
         for (i=1;i<=len;i++) w = w substr(chars, int(rand()*26)+1, 1)
         return w
@@ -42,20 +52,29 @@ generate_words() {
   fi
 }
 
-# Write the file
-generate_words 50 > "$outfile"
-echo "Wrote: $outfile"
+# Ensure upstream exists or set it on first push
+ensure_push() {
+  if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
+    git push
+  else
+    git push -u origin "$branch"
+  fi
+}
 
-# Add, commit, push
-git add -A
-git commit -m "Add $(basename "$outfile") with 50 random words"
+for (( i=1; i<=repeat; i++ )); do
+  # Base filename for today; add a suffix if it already exists (to avoid clobbering)
+  outfile="test/test-${today}.txt"
+  if [[ -e "$outfile" ]]; then
+    # Add time + sequence to guarantee uniqueness across rapid iterations
+    outfile="test/test-${today}-$(date +%H%M%S)-$i.txt"
+  fi
 
-# Push (set upstream if not set)
-if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
-  git push
-else
-  git push -u origin "$(git rev-parse --abbrev-ref HEAD)"
-fi
+  generate_words 50 > "$outfile"
+  echo "Wrote: $outfile"
 
-echo "Pushed commit containing $outfile"
+  git add -A
+  git commit -m "Add $(basename "$outfile") with 50 random words (commit $i/$repeat)"
+  ensure_push
+done
 
+echo "Done: created $repeat file(s), committed, and pushed."
